@@ -1,73 +1,112 @@
-import React, { useState, useEffect, useContext, createContext } from 'react';
+import React, { useState, useEffect, useContext, createContext, useReducer, useMemo, useCallback } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion'; // <-- Animation Package
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Material UI Components ---
 import { 
   Container, Typography, TextField, Button, Select, MenuItem, 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, 
-  IconButton, Chip, Box, Grid, Card, CardContent, InputLabel, FormControl 
+  IconButton, Chip, Box, Grid, Card, CardContent, InputLabel, FormControl, Tooltip
 } from '@mui/material';
 
 // --- Icons ---
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
-import UpdateIcon from '@mui/icons-material/Update';
-import CancelIcon from '@mui/icons-material/Cancel';
 import AssignmentIcon from '@mui/icons-material/Assignment';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import FilterListIcon from '@mui/icons-material/FilterList';
 
 import './App.css'; 
 
-// --- GLASSMORPHISM STYLE OBJECT (Kaanch wala effect) ---
-const glassStyle = {
-  background: 'rgba(255, 255, 255, 0.65)', // Thoda transparent white
-  backdropFilter: 'blur(12px)',            // Peeche ka blur
-  borderRadius: '16px',
-  boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-  border: '1px solid rgba(255, 255, 255, 0.3)',
+// =================================================================
+// [REQUIREMENT 2: useContext] 
+// Yahan hum Global Theme Context bana rahe hain taaki Light/Dark mode
+// poore app mein access ho sake.
+// =================================================================
+const ThemeContext = createContext();
+
+// =================================================================
+// [REQUIREMENT 3: useReducer]
+// Task list ko manage karne ke liye Reducer function.
+// Yeh 'useState' se behtar hai kyunki hum actions (ADD, REMOVE, TOGGLE) define kar sakte hain.
+// =================================================================
+const todoReducer = (state, action) => {
+  switch (action.type) {
+    case 'INIT_TASKS': return action.payload;
+    case 'ADD_TASK': return [...state, action.payload]; // Task add karne ka logic
+    case 'REMOVE_TASK': return state.filter((todo) => todo.id !== action.payload); // Task delete karne ka logic
+    case 'TOGGLE_TASK': return state.map((todo) => todo.id === action.payload ? { ...todo, completed: !todo.completed } : todo); // Task complete mark karne ka logic
+    case 'UPDATE_TASK': return state.map((todo) => todo.id === action.payload.id ? { ...todo, ...action.payload.updatedTodo } : todo);
+    default: return state;
+  }
 };
 
-// --- 1. Context Logic (SAME AS BEFORE) ---
 const TodoContext = createContext();
 
 const TodoProvider = ({ children }) => {
-  const [todos, setTodos] = useState(() => {
+  // [REQUIREMENT 3: useReducer Implementation]
+  // Yahan humne useState ki jagah useReducer use kiya tasks manage karne ke liye.
+  const [todos, dispatch] = useReducer(todoReducer, [], () => {
+    // [REQUIREMENT 6: Persistence]
+    // Initial load pe LocalStorage se data utha rahe hain.
     const savedTodos = localStorage.getItem("myTodos");
     return savedTodos ? JSON.parse(savedTodos) : [];
   });
+  
   const [editData, setEditData] = useState(null);
 
-  useEffect(() => {
-    localStorage.setItem("myTodos", JSON.stringify(todos));
-  }, [todos]);
+  // [REQUIREMENT 6: Persistence with useEffect]
+  // Jab bhi 'todos' change honge, yeh LocalStorage mein save ho jayega.
+  useEffect(() => { localStorage.setItem("myTodos", JSON.stringify(todos)); }, [todos]);
 
-  const addTodo = (todo) => {
-    setTodos([...todos, { id: Date.now(), ...todo }]);
-    toast.success('Task added successfully!', { icon: '✨' });
-  };
+  // [REQUIREMENT 5: useCallback]
+  // Functions ko memoize kiya hai taaki jab yeh child components mein pass hon,
+  // toh woh bina wajah re-render na hon (Performance Optimization).
+  const addTodo = useCallback((todo) => {
+    dispatch({ type: 'ADD_TASK', payload: { id: Date.now(), completed: false, ...todo } });
+    toast.success('Task Added', { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+  }, []);
 
-  const deleteTodo = (id) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
-    toast.error('Task removed', { icon: '🗑️' });
-  };
+  const deleteTodo = useCallback((id) => {
+    dispatch({ type: 'REMOVE_TASK', payload: id });
+    toast.error('Task Deleted', { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+  }, []);
 
-  const updateTodo = (id, updatedTodo) => {
-    setTodos(todos.map((todo) => (todo.id === id ? { ...todo, ...updatedTodo } : todo)));
+  const toggleTodo = useCallback((id) => {
+    dispatch({ type: 'TOGGLE_TASK', payload: id });
+  }, []);
+
+  const updateTodo = useCallback((id, updatedTodo) => {
+    dispatch({ type: 'UPDATE_TASK', payload: { id, updatedTodo } });
     setEditData(null);
-    toast.success('Task updated!', { icon: '🚀' });
-  };
+    toast.success('Task Updated', { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+  }, []);
 
   return (
-    <TodoContext.Provider value={{ todos, addTodo, deleteTodo, updateTodo, editData, setEditData }}>
+    <TodoContext.Provider value={{ todos, addTodo, deleteTodo, toggleTodo, updateTodo, editData, setEditData }}>
       {children}
     </TodoContext.Provider>
   );
 };
 
-// --- 2. Form Component (With Animation) ---
+// =================================================================
+// UI COMPONENTS
+// =================================================================
+
+// --- Form Component ---
 const TodoForm = () => {
   const { addTodo, updateTodo, editData, setEditData } = useContext(TodoContext);
+  
+  // [REQUIREMENT 2: Accessing Theme Context]
+  // Yahan check kar rahe hain ki dark mode on hai ya nahi.
+  const { isDarkMode } = useContext(ThemeContext);
+
+  // [REQUIREMENT: useState]
+  // Input fields (title, desc, priority) ka state manage karne ke liye.
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [priority, setPriority] = useState('Medium');
@@ -78,76 +117,87 @@ const TodoForm = () => {
       setDesc(editData.desc);
       setPriority(editData.priority);
     } else {
-      setTitle('');
-      setDesc('');
-      setPriority('Medium');
+      setTitle(''); setDesc(''); setPriority('Medium');
     }
   }, [editData]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!title || !desc) return toast.error("Please fill all fields!");
+    if (editData) updateTodo(editData.id, { title, desc, priority });
+    else addTodo({ title, desc, priority });
+    setTitle(''); setDesc(''); setPriority('Medium');
+  };
 
-    if (editData) {
-      updateTodo(editData.id, { title, desc, priority });
-    } else {
-      addTodo({ title, desc, priority });
-    }
-    setTitle('');
-    setDesc('');
-    setPriority('Medium');
+  const formCardStyle = {
+    background: isDarkMode ? 'rgba(20, 20, 30, 0.6)' : 'rgba(255, 255, 255, 0.75)',
+    backdropFilter: 'blur(20px)', 
+    borderRadius: '24px',          
+    border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.6)',
+    boxShadow: isDarkMode ? '0 8px 32px 0 rgba(0, 0, 0, 0.5)' : '0 8px 32px 0 rgba(31, 38, 135, 0.15)',
+    marginBottom: '24px',
+    overflow: 'visible'
+  };
+
+  const inputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: '12px',
+      backgroundColor: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)',
+      color: isDarkMode ? '#fff' : '#333',
+      transition: '0.3s',
+      '& fieldset': { borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
+      '&:hover fieldset': { borderColor: isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' },
+      '&.Mui-focused fieldset': { borderColor: isDarkMode ? '#90caf9' : '#2196F3' },
+    },
+    '& .MuiInputLabel-root': { color: isDarkMode ? '#aaa' : '#666' }
   };
 
   return (
-    <motion.div 
-      initial={{ y: -20, opacity: 0 }} 
-      animate={{ y: 0, opacity: 1 }} 
-      transition={{ duration: 0.5 }}
-    >
-      <Card sx={{ ...glassStyle, mb: 4 }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#333', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            {editData ? <EditIcon color="warning"/> : <AddCircleIcon color="primary"/>} 
-            {editData ? "Edit Task" : "Create New Task"}
+    <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.6 }}>
+      <Card sx={formCardStyle} elevation={0}>
+        <CardContent sx={{ p: 4 }}>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 700, mb: 3, color: isDarkMode ? '#fff' : '#333', 
+            display: 'flex', alignItems: 'center', gap: 1.5, letterSpacing: '0.5px'
+          }}>
+            {editData ? <EditIcon sx={{ color: '#ff9f43' }}/> : <AddCircleIcon sx={{ color: '#5f27cd' }}/>} 
+            {editData ? "Edit Your Task" : "Add New Task"}
           </Typography>
           
           <form onSubmit={handleSubmit}>
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               <Grid item xs={12} sm={5}>
-                <TextField 
-                  fullWidth label="What needs to be done?" variant="outlined" size="small"
-                  value={title} onChange={(e) => setTitle(e.target.value)} 
-                  sx={{ backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 1 }}
+                <TextField fullWidth label="What needs to be done?" variant="outlined" size="medium"
+                  value={title} onChange={(e) => setTitle(e.target.value)} sx={inputSx}
                 />
               </Grid>
               <Grid item xs={12} sm={3}>
-                <TextField 
-                  fullWidth label="Description" variant="outlined" size="small"
-                  value={desc} onChange={(e) => setDesc(e.target.value)} 
-                  sx={{ backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 1 }}
+                <TextField fullWidth label="Description" variant="outlined" size="medium"
+                  value={desc} onChange={(e) => setDesc(e.target.value)} sx={inputSx}
                 />
               </Grid>
               <Grid item xs={12} sm={2}>
-                <FormControl fullWidth size="small" sx={{ backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 1 }}>
-                  <InputLabel>Priority</InputLabel>
-                  <Select value={priority} label="Priority" onChange={(e) => setPriority(e.target.value)}>
-                    <MenuItem value="High" sx={{ color: 'red', fontWeight: 'bold' }}>🔥 High</MenuItem>
-                    <MenuItem value="Medium" sx={{ color: 'orange' }}>⚡ Medium</MenuItem>
-                    <MenuItem value="Low" sx={{ color: 'green' }}>☕ Low</MenuItem>
+                <FormControl fullWidth size="medium" sx={inputSx}>
+                  <InputLabel sx={{ color: isDarkMode ? '#aaa' : '#666' }}>Priority</InputLabel>
+                  <Select value={priority} label="Priority" onChange={(e) => setPriority(e.target.value)}
+                    sx={{ color: isDarkMode ? '#fff' : '#333', borderRadius: '12px' }}
+                  >
+                    <MenuItem value="High" sx={{ color: '#ff4757' }}>🔥 High</MenuItem>
+                    <MenuItem value="Medium" sx={{ color: '#ffa502' }}>⚡ Medium</MenuItem>
+                    <MenuItem value="Low" sx={{ color: '#2ed573' }}>☕ Low</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
-              <Grid item xs={12} sm={2}>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Button 
-                    fullWidth type="submit" variant="contained" 
-                    sx={{ 
-                      height: '40px', fontWeight: 'bold', 
-                      background: editData ? 'linear-gradient(45deg, #FE6B8B 30%, #FF8E53 90%)' : 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
-                      boxShadow: '0 3px 5px 2px rgba(33, 203, 243, .3)'
-                    }}
-                  >
-                    {editData ? "Update" : "Add"}
+              <Grid item xs={12} sm={2} sx={{ display: 'flex' }}>
+                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} style={{ width: '100%' }}>
+                  <Button fullWidth type="submit" variant="contained" sx={{ 
+                      height: '100%', borderRadius: '12px', fontWeight: 'bold', textTransform: 'none', fontSize: '1rem',
+                      background: editData 
+                        ? 'linear-gradient(135deg, #ff9f43 0%, #ff6b6b 100%)' 
+                        : 'linear-gradient(135deg, #5f27cd 0%, #48dbfb 100%)',
+                      boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                    }}>
+                    {editData ? "Update" : "Create"}
                   </Button>
                 </motion.div>
               </Grid>
@@ -159,106 +209,139 @@ const TodoForm = () => {
   );
 };
 
-// --- 3. Table Component (With Staggered Animation) ---
+// --- 4. Table Component ---
 const TodoTable = () => {
-  const { todos, deleteTodo, setEditData } = useContext(TodoContext);
+  const { todos, deleteTodo, setEditData, toggleTodo } = useContext(TodoContext);
+  const { isDarkMode } = useContext(ThemeContext);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterPriority, setFilterPriority] = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
 
-  const filteredTodos = todos.filter((todo) => {
-    const matchesSearch = todo.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPriority = filterPriority === "All" || todo.priority === filterPriority;
-    return matchesSearch && matchesPriority;
-  });
+  // =================================================================
+  // [REQUIREMENT 4: useMemo]
+  // Filtering logic ko optimize kiya hai.
+  // Jab tak 'todos', 'searchTerm' ya 'filterStatus' change nahi hote, 
+  // yeh calculation dobara nahi chalegi. Heavy filtering mein yeh fast hota hai.
+  // =================================================================
+  const filteredTodos = useMemo(() => {
+    return todos.filter((todo) => {
+      const matchesSearch = todo.title.toLowerCase().includes(searchTerm.toLowerCase());
+      let matchesStatus = true;
+      if (filterStatus === "Completed") matchesStatus = todo.completed === true;
+      if (filterStatus === "Incomplete") matchesStatus = todo.completed === false;
+      return matchesSearch && matchesStatus;
+    });
+  }, [todos, searchTerm, filterStatus]);
 
-  const getBadgeColor = (p) => {
-    if (p === 'High') return 'error';
-    if (p === 'Medium') return 'warning';
-    return 'success';
+  const getPriorityChip = (p) => {
+    const colors = {
+      High: { bg: 'rgba(255, 71, 87, 0.1)', text: '#ff4757' },
+      Medium: { bg: 'rgba(255, 165, 2, 0.1)', text: '#ffa502' },
+      Low: { bg: 'rgba(46, 213, 115, 0.1)', text: '#2ed573' }
+    };
+    return <Chip label={p} size="small" sx={{ 
+      bgcolor: colors[p].bg, color: colors[p].text, fontWeight: 'bold', borderRadius: '8px', border: `1px solid ${colors[p].text}` 
+    }} />;
+  };
+
+  const tableCardStyle = {
+    background: isDarkMode ? 'rgba(20, 20, 30, 0.6)' : 'rgba(255, 255, 255, 0.75)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: '24px',
+    border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.6)',
+    color: isDarkMode ? '#fff' : '#333',
+  };
+
+  const searchInputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: '12px',
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff',
+      color: isDarkMode ? '#fff' : '#333',
+      '& fieldset': { borderColor: 'transparent' },
+      '&:hover fieldset': { borderColor: 'transparent' },
+      '&.Mui-focused fieldset': { borderColor: '#5f27cd' },
+    }
   };
 
   return (
-    <motion.div 
-      initial={{ y: 20, opacity: 0 }} 
-      animate={{ y: 0, opacity: 1 }} 
-      transition={{ duration: 0.5, delay: 0.2 }}
-    >
-      <Card sx={glassStyle}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-            <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AssignmentIcon sx={{ color: '#555' }}/> Your Tasks 
-              <Chip label={filteredTodos.length} color="primary" size="small" sx={{ fontWeight: 'bold' }} />
-            </Typography>
+    <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.6, delay: 0.1 }}>
+      <Card sx={tableCardStyle} elevation={0}>
+        <CardContent sx={{ p: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <AssignmentIcon sx={{ color: isDarkMode ? '#a29bfe' : '#5f27cd' }}/> Task List
+              </Typography>
+              <Typography variant="body2" sx={{ color: isDarkMode ? '#aaa' : '#666', ml: 4 }}>
+                {filteredTodos.length} tasks remaining
+              </Typography>
+            </Box>
 
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField 
-                size="small" placeholder="🔍 Search..." variant="outlined"
-                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                sx={{ backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 1 }}
+              <TextField placeholder="Search tasks..." variant="outlined" size="small"
+                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} sx={searchInputSx}
               />
-              <FormControl size="small" sx={{ minWidth: 120, backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 1 }}>
-                <Select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} displayEmpty>
-                  <MenuItem value="All">All Priorities</MenuItem>
-                  <MenuItem value="High">🔥 High</MenuItem>
-                  <MenuItem value="Medium">⚡ Medium</MenuItem>
-                  <MenuItem value="Low">☕ Low</MenuItem>
+              <FormControl size="small" sx={{ minWidth: 140 }}>
+                <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} displayEmpty
+                  sx={{ borderRadius: '12px', bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', color: isDarkMode ? '#fff' : '#333', '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                >
+                  <MenuItem value="All"><FilterListIcon sx={{ fontSize: 16, mr: 1 }}/> All</MenuItem>
+                  <MenuItem value="Completed">✅ Done</MenuItem>
+                  <MenuItem value="Incomplete">⏳ Pending</MenuItem>
                 </Select>
               </FormControl>
             </Box>
           </Box>
 
           {filteredTodos.length === 0 ? (
-             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-                <Typography variant="h6">No tasks found! 🎉</Typography>
-                <Typography variant="body2">Enjoy your free time or add a new task.</Typography>
-             </motion.div>
+             <Box sx={{ textAlign: 'center', py: 8, color: isDarkMode ? '#555' : '#ccc' }}>
+                <Typography variant="h5" fontWeight="bold">No Tasks Found</Typography>
+                <Typography>Looks like you're free!</Typography>
+             </Box>
           ) : (
-            <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
-              <Table>
+            <TableContainer component={Box}>
+              <Table sx={{ minWidth: 650 }}>
                 <TableHead>
-                  <TableRow sx={{ '& th': { fontWeight: 'bold', color: '#444', borderBottom: '2px solid rgba(0,0,0,0.1)' } }}>
-                    <TableCell>Task</TableCell>
-                    <TableCell>Priority</TableCell>
-                    <TableCell align="right">Actions</TableCell>
+                  <TableRow>
+                    {['Status', 'Task Details', 'Priority', 'Actions'].map((head) => (
+                      <TableCell key={head} sx={{ color: isDarkMode ? '#7f8c8d' : '#95a5a6', fontWeight: 700, borderBottom: 'none', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px' }}>
+                        {head}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   <AnimatePresence>
                     {filteredTodos.map((todo) => (
-                      <motion.tr
-                        key={todo.id}
-                        layout
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ duration: 0.3 }}
-                        style={{ borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'table-row' }} // Fix for tr animation
+                      <motion.tr key={todo.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        style={{ borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'table-row' }}
                       >
-                        <TableCell component="td" scope="row">
-                          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{todo.title}</Typography>
-                          <Typography variant="caption" color="textSecondary">{todo.desc}</Typography>
-                        </TableCell>
-                        <TableCell component="td" scope="row">
-                          <Chip 
-                            label={todo.priority} 
-                            color={getBadgeColor(todo.priority)} 
-                            size="small" 
-                            variant={todo.priority === 'High' ? 'filled' : 'outlined'}
-                            sx={{ fontWeight: 'bold' }}
-                          />
-                        </TableCell>
-                        <TableCell component="td" align="right">
-                          <motion.div whileHover={{ scale: 1.2 }} style={{ display: 'inline-block' }}>
-                            <IconButton onClick={() => setEditData(todo)} color="primary">
-                              <EditIcon />
+                        {/* [REQUIREMENT: Task Toggle Completed] */}
+                        <TableCell sx={{ borderBottom: isDarkMode ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
+                            <IconButton onClick={() => toggleTodo(todo.id)} 
+                              sx={{ color: todo.completed ? '#2ed573' : (isDarkMode ? '#555' : '#ccc'), transition: '0.3s' }}>
+                                {todo.completed ? <CheckCircleIcon /> : <RadioButtonUncheckedIcon />}
                             </IconButton>
-                          </motion.div>
-                          <motion.div whileHover={{ scale: 1.2 }} style={{ display: 'inline-block' }}>
-                            <IconButton onClick={() => deleteTodo(todo.id)} color="error">
-                              <DeleteIcon />
-                            </IconButton>
-                          </motion.div>
+                        </TableCell>
+                        <TableCell sx={{ borderBottom: isDarkMode ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
+                          <Typography variant="subtitle1" sx={{ 
+                              fontWeight: 600, color: todo.completed ? (isDarkMode ? '#555' : '#bdc3c7') : (isDarkMode ? '#ecf0f1' : '#2d3436'),
+                              textDecoration: todo.completed ? 'line-through' : 'none', transition: '0.3s'
+                            }}>
+                            {todo.title}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: isDarkMode ? '#7f8c8d' : '#95a5a6' }}>{todo.desc}</Typography>
+                        </TableCell>
+                        <TableCell sx={{ borderBottom: isDarkMode ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
+                          {getPriorityChip(todo.priority)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ borderBottom: isDarkMode ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
+                          <IconButton onClick={() => setEditData(todo)} disabled={todo.completed} sx={{ color: '#a29bfe', mr: 1, '&:hover': { bgcolor: 'rgba(162, 155, 254, 0.1)' } }}>
+                            <EditIcon fontSize="small"/>
+                          </IconButton>
+                           {/* [REQUIREMENT: Delete Task] */}
+                          <IconButton onClick={() => deleteTodo(todo.id)} sx={{ color: '#ff7675', '&:hover': { bgcolor: 'rgba(255, 118, 117, 0.1)' } }}>
+                            <DeleteIcon fontSize="small"/>
+                          </IconButton>
                         </TableCell>
                       </motion.tr>
                     ))}
@@ -273,32 +356,58 @@ const TodoTable = () => {
   );
 };
 
-// --- 4. Main App (Heading Animation) ---
+// --- Main App Component ---
 function App() {
+  // [REQUIREMENT 2: Theme State]
+  // Global Theme toggle karne ke liye state.
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const toggleTheme = () => setIsDarkMode(prev => !prev);
+
+  // --- NEW MODERN BACKGROUNDS ---
+  const lightBg = "linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%)"; 
+  const darkBg = "linear-gradient(to right, #0f2027, #203a43, #2c5364)"; 
+
   return (
-    <TodoProvider>
-      <Toaster position="top-center" />
-      <Container maxWidth="md" sx={{ mt: 8, mb: 5 }}>
-        <motion.div 
-          initial={{ y: -50, opacity: 0 }} 
-          animate={{ y: 0, opacity: 1 }} 
-          transition={{ type: "spring", stiffness: 120 }}
-        >
-          <Typography variant="h2" align="center" gutterBottom sx={{ 
-            fontWeight: 800, 
-            color: '#fff', 
-            textShadow: '0px 4px 10px rgba(0,0,0,0.3)',
-            fontFamily: "'Poppins', sans-serif",
-            mb: 4
-          }}>
-            🚀 Task Master
-          </Typography>
-        </motion.div>
+    <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
+      <TodoProvider>
+        <Toaster position="top-center" toastOptions={{ style: { borderRadius: '10px', background: isDarkMode ? '#333' : '#fff', color: isDarkMode ? '#fff' : '#333' } }}/>
         
-        <TodoForm />
-        <TodoTable />
-      </Container>
-    </TodoProvider>
+        <div style={{ 
+             minHeight: '100vh',
+             transition: 'background 0.8s ease',
+             background: isDarkMode ? darkBg : lightBg,
+             fontFamily: "'Poppins', sans-serif"
+        }}>
+          <Container maxWidth="md" sx={{ pt: 8, pb: 5 }}>
+            
+            {/* Header */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 5 }}>
+                <motion.div initial={{ x: -50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: "spring", stiffness: 100 }}>
+                  <Typography variant="h3" sx={{ 
+                    fontWeight: 900, letterSpacing: '-1px', color: isDarkMode ? '#fff' : '#2d3436',
+                    textShadow: isDarkMode ? '0 0 20px rgba(255,255,255,0.2)' : 'none'
+                  }}>
+                    Task Management App
+                  </Typography>
+                </motion.div>
+
+                <Tooltip title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}>
+                    <IconButton onClick={toggleTheme} sx={{ 
+                      bgcolor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#fff', 
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.2)' : '#f1f2f6' }
+                    }}>
+                        {isDarkMode ? <LightModeIcon sx={{ color: '#f1c40f' }}/> : <DarkModeIcon sx={{ color: '#2d3436' }}/>}
+                    </IconButton>
+                </Tooltip>
+            </Box>
+            
+            <TodoForm />
+            <TodoTable />
+          </Container>
+        </div>
+      </TodoProvider>
+    </ThemeContext.Provider>
   );
 }
 

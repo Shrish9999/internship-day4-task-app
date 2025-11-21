@@ -1,37 +1,35 @@
-/* App.css */
-
 /* 1. Font Import */
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;900&display=swap');
 
-/* 2. Animated Gradient Background */
+/* 2. Global Body Styles */
 body {
   margin: 0;
+  padding: 0;
   font-family: 'Poppins', sans-serif;
-  background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-  background-size: 400% 400%;
-  animation: gradientBG 15s ease infinite;
-  min-height: 100vh;
-  color: #333;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Animation Keyframes */
-@keyframes gradientBG {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-/* 3. Scrollbar Design */
+/* 3. Scrollbar Design (Premium Look) */
 ::-webkit-scrollbar {
   width: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
+  background: transparent; 
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(100, 100, 100, 0.3); 
   border-radius: 10px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(100, 100, 100, 0.5); 
+}
+
+/* Optional: Agar kisi text selection ko bhi stylish banana ho */
+::selection {
+  background: #a29bfe;
+  color: white;
 }
